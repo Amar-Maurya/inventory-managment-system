@@ -57,7 +57,7 @@ groutline/
 ├── vite.config.js
 ├── tailwind.config.js
 ├── postcss.config.js
-└── src/
+
     ├── main.jsx
     ├── index.css
     └── App.jsx        # login + dashboard + products, all tabs
