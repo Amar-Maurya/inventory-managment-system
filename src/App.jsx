@@ -1,11 +1,18 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 import {
   Eye, EyeOff, Info, Grid3x3, ArrowRight, X, LayoutDashboard, Package,
   Plus, Trash2, Search, Bell, AlertTriangle, DollarSign, Users, Boxes,
   Layers, Droplet, Download, Upload, FileSpreadsheet, LogOut, Check,
-  ChevronDown, Image as ImageIcon,
+  ChevronDown, Image as ImageIcon, Pencil, ExternalLink, RefreshCw, AlertCircle,
+  UserPlus, Mail, Lock,
 } from "lucide-react";
+import { GOOGLE_CLIENT_ID } from "./config";
+import { initGoogleAuth, signIn, signOut } from "./services/googleAuthService";
+import { getOrCreateUserSheet, readProducts, writeAllProducts, sheetUrl } from "./services/sheetsService";
+import { backupProducts } from "./services/backupService";
+import { inviteTeamMember, signInWithEmail } from "./services/teamAuthService";
+import { readProductsViaBridge, writeProductsViaBridge } from "./services/sheetBridgeService";
 
 const COLORS = {
   graphite: "#1C2B33",
@@ -140,16 +147,67 @@ function TileGrid() {
   );
 }
 
-function LoginScreen({ onLogin }) {
-  const [showPassword, setShowPassword] = useState(false);
-  const [showInfo, setShowInfo] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+function GoogleGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true">
+      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C33.9 5.5 29.2 3.5 24 3.5 12.7 3.5 3.5 12.7 3.5 24S12.7 44.5 24 44.5 44.5 35.3 44.5 24c0-1.2-.1-2.4-.4-3.5z"/>
+      <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C33.9 5.5 29.2 3.5 24 3.5c-7.7 0-14.4 4.3-17.7 11.2z"/>
+      <path fill="#4CAF50" d="M24 44.5c5.1 0 9.8-1.9 13.3-5.1l-6.2-5.2c-2 1.4-4.6 2.3-7.1 2.3-5.3 0-9.7-3.1-11.3-7.8l-6.5 5C9.5 40.1 16.2 44.5 24 44.5z"/>
+      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.4-2.3 4.4-4.2 5.9l6.2 5.2C40.9 36 44.5 30.5 44.5 24c0-1.2-.1-2.4-.4-3.5z"/>
+    </svg>
+  );
+}
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onLogin();
+function LoginScreen({ onSignedIn, googleReady }) {
+  const [mode, setMode] = useState("google"); // "google" | "team"
+  const [showInfo, setShowInfo] = useState(false);
+  const [status, setStatus] = useState("idle"); // idle | signing-in | loading-sheet | error
+  const [errorMsg, setErrorMsg] = useState("");
+  const [teamEmail, setTeamEmail] = useState("");
+  const [teamPassword, setTeamPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  const handleGoogleSignIn = async () => {
+    setStatus("signing-in");
+    setErrorMsg("");
+    try {
+      const { token, user } = await signIn();
+      setStatus("loading-sheet");
+      const { sheetId, isNew } = await getOrCreateUserSheet(token);
+      let products = [];
+      if (isNew) {
+        await writeAllProducts(token, sheetId, []);
+      } else {
+        products = await readProducts(token, sheetId);
+      }
+      onSignedIn({ mode: "google", token, user, sheetId, products });
+    } catch (err) {
+      console.error(err);
+      setStatus("error");
+      setErrorMsg(
+        err?.message?.includes("popup") || err?.error === "popup_closed_by_user"
+          ? "Sign-in was closed before finishing. Try again."
+          : "Couldn't connect to Google. Check that this domain is added as an authorized origin in Google Cloud Console."
+      );
+    }
   };
+
+  const handleTeamSignIn = async (e) => {
+    e.preventDefault();
+    setStatus("signing-in");
+    setErrorMsg("");
+    try {
+      const { supabaseToken, email } = await signInWithEmail(teamEmail, teamPassword);
+      setStatus("loading-sheet");
+      const products = await readProductsViaBridge(supabaseToken);
+      onSignedIn({ mode: "team", supabaseToken, user: { email }, products });
+    } catch (err) {
+      setStatus("error");
+      setErrorMsg(err.message || "Sign-in failed.");
+    }
+  };
+
+  const busy = status === "signing-in" || status === "loading-sheet";
 
   return (
     <div style={{ fontFamily: "'Inter', sans-serif", color: COLORS.ink, background: COLORS.porcelain, height: "100vh", overflowY: "auto" }} className="flex flex-col md:flex-row">
@@ -178,34 +236,102 @@ function LoginScreen({ onLogin }) {
               <Info size={19} />
             </button>
           </div>
-          <p style={{ color: COLORS.mist }} className="text-sm mb-6">Enter your details to access the dashboard.</p>
+          <p style={{ color: COLORS.mist }} className="text-sm mb-5">
+            {mode === "google" ? "Your inventory lives in a Google Sheet in your own Drive." : "Sign in with the login your team owner shared with you."}
+          </p>
 
           {showInfo && (
-            <div style={{ background: "#EFF6F6", border: `1px solid ${COLORS.teal}22` }} className="rounded-lg p-4 mb-6 text-sm relative">
+            <div style={{ background: "#EFF6F6", border: `1px solid ${COLORS.teal}22` }} className="rounded-lg p-4 mb-5 text-sm relative">
               <button onClick={() => setShowInfo(false)} className="absolute top-3 right-3 opacity-50 hover:opacity-100" aria-label="Close"><X size={14} /></button>
-              <p style={{ color: COLORS.graphite }} className="font-medium mb-1">Preview mode</p>
-              <p className="leading-relaxed pr-4">Any email/password gets you in — this demonstrates the flow before real authentication is wired in.</p>
+              <p style={{ color: COLORS.graphite }} className="font-medium mb-1">How this works</p>
+              <p className="leading-relaxed pr-4">
+                {mode === "google"
+                  ? "Signing in creates (or opens) a Google Sheet called \"GroutLine Inventory\" in your Drive. Everything you do here writes straight to that sheet — you can also open and edit it directly in Google Sheets."
+                  : "Team logins don't need a Google account — the owner creates this email and password for you from inside the app, and it gives you the same read/write access to the same inventory."}
+              </p>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Email</label>
-              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" style={{ borderColor: COLORS.line }} className="w-full rounded-lg border px-3.5 py-2.5 text-sm outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Password</label>
+          {/* Mode toggle */}
+          <div style={{ border: `1px solid ${COLORS.line}`, background: COLORS.surface }} className="flex rounded-lg p-1 mb-5">
+            <button
+              onClick={() => { setMode("google"); setStatus("idle"); }}
+              style={{ background: mode === "google" ? COLORS.graphite : "transparent", color: mode === "google" ? "#fff" : COLORS.mist }}
+              className="flex-1 rounded-md py-2 text-xs font-medium transition-colors"
+            >
+              Google account
+            </button>
+            <button
+              onClick={() => { setMode("team"); setStatus("idle"); }}
+              style={{ background: mode === "team" ? COLORS.graphite : "transparent", color: mode === "team" ? "#fff" : COLORS.mist }}
+              className="flex-1 rounded-md py-2 text-xs font-medium transition-colors"
+            >
+              Email & password
+            </button>
+          </div>
+
+          {mode === "google" ? (
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={!googleReady || busy}
+              style={{ borderColor: COLORS.line }}
+              className="w-full flex items-center justify-center gap-3 border rounded-lg py-2.5 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {busy ? (
+                <>
+                  <RefreshCw size={16} className="animate-spin" style={{ color: COLORS.teal }} />
+                  {status === "signing-in" ? "Waiting for Google..." : "Loading your inventory..."}
+                </>
+              ) : (
+                <>
+                  <GoogleGlyph />
+                  Sign in with Google
+                </>
+              )}
+            </button>
+          ) : (
+            <form onSubmit={handleTeamSignIn} className="space-y-3">
               <div className="relative">
-                <input type={showPassword ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={{ borderColor: COLORS.line }} className="w-full rounded-lg border px-3.5 py-2.5 pr-10 text-sm outline-none" />
+                <Mail size={15} style={{ color: COLORS.mist }} className="absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email" required value={teamEmail} onChange={(e) => setTeamEmail(e.target.value)}
+                  placeholder="teammate@company.com" style={{ borderColor: COLORS.line }}
+                  className="w-full pl-9 pr-3 py-2.5 rounded-lg border text-sm outline-none"
+                />
+              </div>
+              <div className="relative">
+                <Lock size={15} style={{ color: COLORS.mist }} className="absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type={showPassword ? "text" : "password"} required value={teamPassword} onChange={(e) => setTeamPassword(e.target.value)}
+                  placeholder="Password" style={{ borderColor: COLORS.line }}
+                  className="w-full pl-9 pr-10 py-2.5 rounded-lg border text-sm outline-none"
+                />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-90" aria-label="Toggle password">
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
+              <button
+                type="submit"
+                disabled={busy}
+                style={{ background: COLORS.graphite }}
+                className="w-full flex items-center justify-center gap-2 text-white rounded-lg py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-60"
+              >
+                {busy ? <RefreshCw size={15} className="animate-spin" /> : <ArrowRight size={15} />}
+                {busy ? (status === "signing-in" ? "Signing in..." : "Loading inventory...") : "Sign in"}
+              </button>
+            </form>
+          )}
+
+          {status === "error" && (
+            <div style={{ background: COLORS.rustFaint, color: COLORS.rust }} className="flex items-start gap-2 rounded-lg p-3.5 mt-4 text-sm">
+              <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+              <p>{errorMsg}</p>
             </div>
-            <button type="submit" style={{ background: COLORS.graphite }} className="w-full flex items-center justify-center gap-2 text-white rounded-lg py-2.5 text-sm font-medium mt-2 hover:opacity-90">
-              Sign in <ArrowRight size={15} />
-            </button>
-          </form>
+          )}
+
+          {mode === "google" && !googleReady && (
+            <p style={{ color: COLORS.mist }} className="text-xs text-center mt-4">Connecting to Google...</p>
+          )}
         </div>
       </div>
     </div>
@@ -213,17 +339,30 @@ function LoginScreen({ onLogin }) {
 }
 
 // ---------- Add Product Modal ----------
-function AddProductModal({ onClose, onAdd }) {
-  const [form, setForm] = useState({ name: "", category: "Tiles", qty: "", threshold: "", price: "", supplier: "" });
+function ProductFormModal({ onClose, onSave, editProduct }) {
+  const isEdit = Boolean(editProduct);
+  const [form, setForm] = useState(
+    editProduct
+      ? {
+          name: editProduct.name, category: editProduct.category, qty: String(editProduct.qty),
+          threshold: String(editProduct.threshold), price: String(editProduct.price), supplier: editProduct.supplier,
+        }
+      : { name: "", category: "Tiles", qty: "", threshold: "", price: "", supplier: "" }
+  );
   const update = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!form.name || !form.qty || !form.price) return;
-    onAdd({
-      id: Date.now(), name: form.name, category: form.category, qty: Number(form.qty),
-      threshold: Number(form.threshold) || 10, price: Number(form.price), supplier: form.supplier || "—",
-      dateAdded: new Date().toISOString().slice(0, 10),
+    onSave({
+      id: isEdit ? editProduct.id : Date.now(),
+      name: form.name,
+      category: form.category,
+      qty: Number(form.qty),
+      threshold: Number(form.threshold) || 10,
+      price: Number(form.price),
+      supplier: form.supplier || "—",
+      dateAdded: isEdit ? editProduct.dateAdded : new Date().toISOString().slice(0, 10),
     });
     onClose();
   };
@@ -232,8 +371,8 @@ function AddProductModal({ onClose, onAdd }) {
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
       <div style={{ background: COLORS.surface }} className="w-full max-w-md rounded-2xl p-6 md:p-7 relative max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-5 right-5 opacity-50 hover:opacity-100" aria-label="Close"><X size={18} /></button>
-        <h2 style={{ fontFamily: "'Sora', sans-serif" }} className="text-xl font-semibold mb-1">Add product</h2>
-        <p style={{ color: COLORS.mist }} className="text-sm mb-6">Enter details for the new stock item.</p>
+        <h2 style={{ fontFamily: "'Sora', sans-serif" }} className="text-xl font-semibold mb-1">{isEdit ? "Edit product" : "Add product"}</h2>
+        <p style={{ color: COLORS.mist }} className="text-sm mb-6">{isEdit ? "Update details for this stock item." : "Enter details for the new stock item."}</p>
 
         <div style={{ borderColor: COLORS.line, background: COLORS.porcelain }} className="border border-dashed rounded-xl h-24 flex flex-col items-center justify-center mb-5 gap-1">
           <ImageIcon size={18} style={{ color: COLORS.mist }} />
@@ -272,11 +411,53 @@ function AddProductModal({ onClose, onAdd }) {
             </div>
           </div>
           <button type="submit" style={{ background: COLORS.graphite }} className="w-full flex items-center justify-center gap-2 text-white rounded-lg py-2.5 text-sm font-medium mt-2 hover:opacity-90">
-            <Check size={15} /> Save product
+            <Check size={15} /> {isEdit ? "Save changes" : "Save product"}
           </button>
         </form>
       </div>
     </div>
+  );
+}
+
+function EditableQty({ product, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(product.qty);
+  const low = product.qty < product.threshold;
+
+  const commit = () => {
+    const n = Number(value);
+    if (!Number.isNaN(n) && n >= 0) onSave({ ...product, qty: n });
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        type="number"
+        min="0"
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") { setValue(product.qty); setEditing(false); }
+        }}
+        style={{ borderColor: COLORS.teal, fontFamily: "'IBM Plex Mono', monospace" }}
+        className="w-16 border rounded-md px-2 py-1 text-xs outline-none"
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setEditing(true)}
+      style={{ color: low ? COLORS.rust : COLORS.ink, fontFamily: "'IBM Plex Mono', monospace" }}
+      className="text-xs underline decoration-dotted underline-offset-2 hover:opacity-70"
+      title="Click to edit quantity"
+    >
+      {product.qty}
+    </button>
   );
 }
 
@@ -361,8 +542,67 @@ function ImportModal({ onClose, onImport }) {
   );
 }
 
+// ---------- Share Access Modal (owner only) ----------
+function ShareAccessModal({ onClose, ownerEmail, sheetId }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | saving | success | error
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setStatus("saving");
+    setErrorMsg("");
+    try {
+      await inviteTeamMember({ ownerEmail, sheetId, teammateEmail: email, password });
+      setStatus("success");
+    } catch (err) {
+      setStatus("error");
+      setErrorMsg(err.message);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+      <div style={{ background: COLORS.surface }} className="w-full max-w-md rounded-2xl p-6 md:p-7 relative">
+        <button onClick={onClose} className="absolute top-5 right-5 opacity-50 hover:opacity-100" aria-label="Close"><X size={18} /></button>
+        <h2 style={{ fontFamily: "'Sora', sans-serif" }} className="text-xl font-semibold mb-1">Share access</h2>
+        <p style={{ color: COLORS.mist }} className="text-sm mb-6">
+          Create a login for a teammate — they'll see and update the same inventory without needing a Google account.
+        </p>
+
+        {status === "success" ? (
+          <div style={{ background: COLORS.tealFaint }} className="rounded-lg p-4 text-sm">
+            <p style={{ color: COLORS.graphite }} className="font-medium mb-1">Access created</p>
+            <p style={{ color: COLORS.ink }}>Share these credentials with them directly — email: <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{email}</span></p>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3.5">
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Teammate's email</label>
+              <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="teammate@company.com" style={{ borderColor: COLORS.line }} className="w-full rounded-lg border px-3.5 py-2.5 text-sm outline-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Set a password for them</label>
+              <input required type="text" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" style={{ borderColor: COLORS.line }} className="w-full rounded-lg border px-3.5 py-2.5 text-sm outline-none" />
+            </div>
+            {status === "error" && (
+              <p style={{ background: COLORS.rustFaint, color: COLORS.rust }} className="text-sm rounded-lg p-3">{errorMsg}</p>
+            )}
+            <button type="submit" disabled={status === "saving"} style={{ background: COLORS.graphite }} className="w-full flex items-center justify-center gap-2 text-white rounded-lg py-2.5 text-sm font-medium mt-2 hover:opacity-90 disabled:opacity-60">
+              {status === "saving" ? <RefreshCw size={15} className="animate-spin" /> : <UserPlus size={15} />}
+              {status === "saving" ? "Creating access..." : "Create access"}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Top Nav ----------
-function TopNav({ activeTab, setActiveTab, onLogout }) {
+function TopNav({ activeTab, setActiveTab, onLogout, user, sheetId, syncStatus, sessionMode }) {
+  const [showShare, setShowShare] = useState(false);
   const tabs = [
     { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { key: "products", label: "Products", icon: Package },
@@ -392,6 +632,53 @@ function TopNav({ activeTab, setActiveTab, onLogout }) {
           </nav>
         </div>
         <div className="flex items-center gap-4">
+          {/* Sync status */}
+          <div className="hidden md:flex items-center gap-1.5" style={{ color: "rgba(255,255,255,0.5)" }}>
+            {syncStatus === "saving" && (
+              <>
+                <RefreshCw size={13} className="animate-spin" />
+                <span className="text-xs">Saving...</span>
+              </>
+            )}
+            {syncStatus === "saved" && (
+              <>
+                <Check size={13} color={COLORS.tealLight} />
+                <span className="text-xs">Synced to Sheets</span>
+              </>
+            )}
+            {syncStatus === "error" && (
+              <>
+                <AlertCircle size={13} color="#E8998D" />
+                <span className="text-xs">Sync failed</span>
+              </>
+            )}
+          </div>
+
+          {sheetId && (
+            <a
+              href={sheetUrl(sheetId)}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "rgba(255,255,255,0.6)" }}
+              className="hidden sm:flex items-center gap-1.5 hover:opacity-80 text-xs"
+              title="Open in Google Sheets"
+            >
+              <ExternalLink size={14} />
+              <span className="hidden lg:inline">Open in Sheets</span>
+            </a>
+          )}
+
+          {sessionMode === "google" && (
+            <button
+              onClick={() => setShowShare(true)}
+              style={{ color: "rgba(255,255,255,0.6)" }}
+              className="hidden sm:flex items-center gap-1.5 hover:opacity-80"
+              title="Share access with a teammate"
+            >
+              <UserPlus size={16} />
+            </button>
+          )}
+
           <button style={{ color: "rgba(255,255,255,0.6)" }} className="relative hover:opacity-80" aria-label="Notifications">
             <Bell size={17} />
             <span style={{ background: COLORS.rust }} className="absolute -top-1 -right-1 w-2 h-2 rounded-full" />
@@ -399,9 +686,16 @@ function TopNav({ activeTab, setActiveTab, onLogout }) {
           <button onClick={onLogout} style={{ color: "rgba(255,255,255,0.6)" }} className="hover:opacity-80" aria-label="Log out">
             <LogOut size={17} />
           </button>
-          <div style={{ background: COLORS.tealLight }} className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium">A</div>
+          {user?.picture ? (
+            <img src={user.picture} alt={user.name || "User"} title={user.email} className="w-8 h-8 rounded-full" referrerPolicy="no-referrer" />
+          ) : (
+            <div style={{ background: COLORS.tealLight }} className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium">
+              {user?.email?.[0]?.toUpperCase() || "A"}
+            </div>
+          )}
         </div>
       </div>
+      {showShare && <ShareAccessModal onClose={() => setShowShare(false)} ownerEmail={user?.email} sheetId={sheetId} />}
     </header>
   );
 }
@@ -509,7 +803,7 @@ function DashboardTab({ products, onAdd, onDelete, onImport, goToProducts }) {
         <Plus size={15} /> Add product
       </button>
 
-      {showAdd && <AddProductModal onClose={() => setShowAdd(false)} onAdd={onAdd} />}
+      {showAdd && <ProductFormModal onClose={() => setShowAdd(false)} onSave={onAdd} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} onImport={onImport} />}
       {deleteTarget && <DeleteConfirm product={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={() => { onDelete(deleteTarget.id); setDeleteTarget(null); }} />}
     </div>
@@ -517,13 +811,14 @@ function DashboardTab({ products, onAdd, onDelete, onImport, goToProducts }) {
 }
 
 // ---------- Products Tab ----------
-function ProductsTab({ products, onAdd, onDelete, onImport }) {
+function ProductsTab({ products, onAdd, onEdit, onDelete, onImport }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [sortBy, setSortBy] = useState("newest");
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const filtered = useMemo(() => {
@@ -610,6 +905,7 @@ function ProductsTab({ products, onAdd, onDelete, onImport }) {
                   <th className="font-medium px-5 py-3">Product</th>
                   <th className="font-medium px-5 py-3">Qty</th>
                   <th className="font-medium px-5 py-3">Price</th>
+                  <th className="font-medium px-5 py-3">Total value</th>
                   <th className="font-medium px-5 py-3">Supplier</th>
                   <th className="font-medium px-5 py-3">Added</th>
                   <th className="font-medium px-5 py-3"></th>
@@ -630,16 +926,22 @@ function ProductsTab({ products, onAdd, onDelete, onImport }) {
                         </div>
                       </td>
                       <td className="px-5 py-3">
-                        <span style={{ color: low ? COLORS.rust : COLORS.ink, fontFamily: "'IBM Plex Mono', monospace" }} className="text-xs">{p.qty}</span>
+                        <EditableQty product={p} onSave={onEdit} />
                         {low && <span style={{ color: COLORS.rust }} className="text-xs ml-1.5">low</span>}
                       </td>
                       <td style={{ fontFamily: "'IBM Plex Mono', monospace" }} className="px-5 py-3 text-xs">{formatINR(p.price)}</td>
+                      <td style={{ fontFamily: "'IBM Plex Mono', monospace", color: COLORS.teal }} className="px-5 py-3 text-xs font-medium">{formatINR(p.qty * p.price)}</td>
                       <td style={{ color: COLORS.mist }} className="px-5 py-3 text-xs">{p.supplier}</td>
                       <td style={{ color: COLORS.mist, fontFamily: "'IBM Plex Mono', monospace" }} className="px-5 py-3 text-xs">{p.dateAdded}</td>
                       <td className="px-5 py-3 text-right">
-                        <button onClick={() => setDeleteTarget(p)} className="opacity-40 hover:opacity-100 hover:text-red-600 transition-opacity" aria-label={`Delete ${p.name}`}>
-                          <Trash2 size={15} />
-                        </button>
+                        <div className="flex items-center justify-end gap-3">
+                          <button onClick={() => setEditTarget(p)} style={{ color: COLORS.teal }} className="opacity-60 hover:opacity-100 transition-opacity" aria-label={`Edit ${p.name}`}>
+                            <Pencil size={14} />
+                          </button>
+                          <button onClick={() => setDeleteTarget(p)} className="opacity-40 hover:opacity-100 hover:text-red-600 transition-opacity" aria-label={`Delete ${p.name}`}>
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -650,7 +952,8 @@ function ProductsTab({ products, onAdd, onDelete, onImport }) {
         </div>
       )}
 
-      {showAdd && <AddProductModal onClose={() => setShowAdd(false)} onAdd={onAdd} />}
+      {showAdd && <ProductFormModal onClose={() => setShowAdd(false)} onSave={onAdd} />}
+      {editTarget && <ProductFormModal editProduct={editTarget} onClose={() => setEditTarget(null)} onSave={onEdit} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} onImport={onImport} />}
       {deleteTarget && <DeleteConfirm product={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={() => { onDelete(deleteTarget.id); setDeleteTarget(null); }} />}
     </div>
@@ -661,24 +964,101 @@ function ProductsTab({ products, onAdd, onDelete, onImport }) {
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [products, setProducts] = useState(INITIAL_PRODUCTS);
+  const [products, setProducts] = useState([]);
 
-  const handleAdd = (product) => setProducts((prev) => [product, ...prev]);
-  const handleDelete = (id) => setProducts((prev) => prev.filter((p) => p.id !== id));
-  const handleImport = (newProducts) => setProducts((prev) => [...newProducts, ...prev]);
+  const [googleReady, setGoogleReady] = useState(false);
+  const [session, setSession] = useState(null); // { token, user, sheetId }
+  const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
 
-  if (!loggedIn) return <LoginScreen onLogin={() => setLoggedIn(true)} />;
+  // Initialize Google Identity Services once, on mount.
+  useEffect(() => {
+    initGoogleAuth(GOOGLE_CLIENT_ID).then(() => setGoogleReady(true));
+  }, []);
+
+  const handleSignedIn = (payload) => {
+    setSession(payload); // { mode: 'google', token, user, sheetId } OR { mode: 'team', supabaseToken, user }
+    setProducts(payload.products);
+    setLoggedIn(true);
+  };
+
+  const handleLogout = () => {
+    if (session?.mode === "google") signOut();
+    setSession(null);
+    setLoggedIn(false);
+    setProducts([]);
+    setSyncStatus("idle");
+  };
+
+  // Every mutation: update local state immediately (snappy UI), then push
+  // the full list through to Google — directly if the owner, or via the
+  // backend bridge if it's a team member — then fire a non-blocking backup.
+  const syncToSheet = async (updatedProducts) => {
+    if (!session) return;
+    setSyncStatus("saving");
+    try {
+      if (session.mode === "google") {
+        await writeAllProducts(session.token, session.sheetId, updatedProducts);
+      } else {
+        await writeProductsViaBridge(session.supabaseToken, updatedProducts);
+      }
+      setSyncStatus("saved");
+      backupProducts(session.user?.email, updatedProducts); // fire-and-forget
+      setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 2500);
+    } catch (err) {
+      console.error("Sheet sync failed:", err);
+      setSyncStatus("error");
+    }
+  };
+
+  // Human-readable timestamp for the sheet — this metadata is never shown
+  // in the UI, it exists purely for reference when someone opens the sheet.
+  const now = () => new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+
+  const handleAdd = (product) => {
+    const stamped = { ...product, createdAt: now(), updatedAt: now() };
+    const updated = [stamped, ...products];
+    setProducts(updated);
+    syncToSheet(updated);
+  };
+  const handleEdit = (edited) => {
+    const updated = products.map((p) =>
+      p.id === edited.id ? { ...edited, createdAt: p.createdAt || now(), updatedAt: now() } : p
+    );
+    setProducts(updated);
+    syncToSheet(updated);
+  };
+  const handleDelete = (id) => {
+    const updated = products.filter((p) => p.id !== id);
+    setProducts(updated);
+    syncToSheet(updated);
+  };
+  const handleImport = (newProducts) => {
+    const stamped = newProducts.map((p) => ({ ...p, createdAt: now(), updatedAt: now() }));
+    const updated = [...stamped, ...products];
+    setProducts(updated);
+    syncToSheet(updated);
+  };
+
+  if (!loggedIn) return <LoginScreen onSignedIn={handleSignedIn} googleReady={googleReady} />;
 
   return (
     <div
       style={{ fontFamily: "'Inter', sans-serif", color: COLORS.ink, background: COLORS.porcelain, height: "100vh", overflowY: "auto" }}
     >
       <style>{FONT_IMPORT}</style>
-      <TopNav activeTab={activeTab} setActiveTab={(t) => setActiveTab(t)} onLogout={() => setLoggedIn(false)} />
+      <TopNav
+        activeTab={activeTab}
+        setActiveTab={(t) => setActiveTab(t)}
+        onLogout={handleLogout}
+        user={session?.user}
+        sheetId={session?.sheetId}
+        syncStatus={syncStatus}
+        sessionMode={session?.mode}
+      />
       {activeTab === "dashboard" ? (
-        <DashboardTab products={products} onAdd={handleAdd} onDelete={handleDelete} onImport={handleImport} goToProducts={() => setActiveTab("products")} />
+        <DashboardTab products={products} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} onImport={handleImport} goToProducts={() => setActiveTab("products")} />
       ) : (
-        <ProductsTab products={products} onAdd={handleAdd} onDelete={handleDelete} onImport={handleImport} />
+        <ProductsTab products={products} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} onImport={handleImport} />
       )}
     </div>
   );
