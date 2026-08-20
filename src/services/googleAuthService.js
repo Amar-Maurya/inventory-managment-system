@@ -5,7 +5,7 @@
 // Scopes are intentionally narrow: drive.file only sees files THIS app
 // creates, not the user's whole Drive.
 
-const SCOPES = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file";
+const SCOPES = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
 
 let tokenClient = null;
 let accessToken = null;
