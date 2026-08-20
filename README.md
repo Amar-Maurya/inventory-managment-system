@@ -9,9 +9,10 @@ not yet connected to a real backend.
 - **Login** — UI only, accepts any email/password (demo mode)
 - **Dashboard** — quick stats, low-stock alerts, Excel export/import, recently added items
 - **Products** — full list with search, category filter, sort, low-stock filter,
-  add/delete, and Excel export (respects active filters)
+  add/edit/delete, inline quantity editing, and Excel export (respects active filters)
 - **Excel import/export** — real `.xlsx` file download/upload via SheetJS,
   including a downloadable sample import template
+- **Prices in INR (₹)**, Indian number formatting
 
 ## Run locally
 
@@ -28,22 +29,14 @@ Opens at `http://localhost:5173`
 npm run build
 ```
 
-Outputs static files to `dist/` — deployable to any static host.
-
 ## Deploy (free)
 
-**Vercel** (recommended)
-1. Push this folder to a GitHub repo
-2. Go to vercel.com → New Project → Import your repo
-3. Vercel auto-detects Vite — just click Deploy
-4. You'll get a live `https://your-project.vercel.app` URL
-
-**Netlify** — same flow: connect repo → deploy → live `.netlify.app` URL
+Push this folder to GitHub, then import it on vercel.com — Vite is auto-detected,
+no config needed. You'll get a live `https://your-project.vercel.app` URL.
 
 ## What's next (not yet built)
 
-- Real authentication (Supabase Auth — swap logic lives in one place, not
-  scattered through the UI)
+- Real authentication (Supabase Auth)
 - Live database instead of mock in-memory state (Supabase/Postgres, free tier)
 - Product image upload (Supabase Storage)
 - Role-based access (Admin / Staff / Viewer)
@@ -57,12 +50,8 @@ groutline/
 ├── vite.config.js
 ├── tailwind.config.js
 ├── postcss.config.js
-
+└── src/
     ├── main.jsx
     ├── index.css
     └── App.jsx        # login + dashboard + products, all tabs
 ```
-
-`App.jsx` currently holds everything in one file for fast iteration during
-the preview phase. Once backend work starts, this splits into
-`pages/`, `components/`, `services/`, and `context/` as planned.
