@@ -332,6 +332,12 @@ function LoginScreen({ onSignedIn, googleReady }) {
           {mode === "google" && !googleReady && (
             <p style={{ color: COLORS.mist }} className="text-xs text-center mt-4">Connecting to Google...</p>
           )}
+
+          <div className="flex items-center justify-center gap-3 mt-8">
+            <a href="/privacy.html" target="_blank" rel="noreferrer" style={{ color: COLORS.mist }} className="text-xs hover:underline">Privacy Policy</a>
+            <span style={{ color: COLORS.line }}>·</span>
+            <a href="/terms.html" target="_blank" rel="noreferrer" style={{ color: COLORS.mist }} className="text-xs hover:underline">Terms of Service</a>
+          </div>
         </div>
       </div>
     </div>
