@@ -8,7 +8,7 @@ import {
   UserPlus, Mail, Lock,
 } from "lucide-react";
 import { GOOGLE_CLIENT_ID } from "./config";
-import { initGoogleAuth, signIn, signOut } from "./services/googleAuthService";
+import { initGoogleAuth, signIn, signOut, trySilentSignIn } from "./services/googleAuthService";
 import { getOrCreateUserSheet, readProducts, writeAllProducts, sheetUrl } from "./services/sheetsService";
 import { backupProducts } from "./services/backupService";
 import { inviteTeamMember, signInWithEmail } from "./services/teamAuthService";
@@ -961,33 +961,96 @@ function ProductsTab({ products, onAdd, onEdit, onDelete, onImport }) {
 }
 
 // ---------- Root App ----------
+const SESSION_KEY = "groutline_session_mode"; // "google" | "team"
+const TEAM_TOKEN_KEY = "groutline_team_token";
+const TEAM_EMAIL_KEY = "groutline_team_email";
+
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [products, setProducts] = useState([]);
 
   const [googleReady, setGoogleReady] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [session, setSession] = useState(null); // { token, user, sheetId }
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
 
-  // Initialize Google Identity Services once, on mount.
-  useEffect(() => {
-    initGoogleAuth(GOOGLE_CLIENT_ID).then(() => setGoogleReady(true));
-  }, []);
-
-  const handleSignedIn = (payload) => {
+  // Persist to localStorage on sign-in, restore on page load, clear on logout.
+  const handleSignedIn = (payload, { persist = true } = {}) => {
     setSession(payload); // { mode: 'google', token, user, sheetId } OR { mode: 'team', supabaseToken, user }
     setProducts(payload.products);
     setLoggedIn(true);
+    if (persist) {
+      if (payload.mode === "google") {
+        localStorage.setItem(SESSION_KEY, "google");
+        localStorage.removeItem(TEAM_TOKEN_KEY);
+        localStorage.removeItem(TEAM_EMAIL_KEY);
+      } else {
+        localStorage.setItem(SESSION_KEY, "team");
+        localStorage.setItem(TEAM_TOKEN_KEY, payload.supabaseToken);
+        localStorage.setItem(TEAM_EMAIL_KEY, payload.user?.email || "");
+      }
+    }
   };
 
   const handleLogout = () => {
     if (session?.mode === "google") signOut();
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(TEAM_TOKEN_KEY);
+    localStorage.removeItem(TEAM_EMAIL_KEY);
     setSession(null);
     setLoggedIn(false);
     setProducts([]);
     setSyncStatus("idle");
   };
+
+  // On mount: initialize Google Identity Services, then try to silently
+  // restore whichever session type was last active — no re-login needed
+  // unless the underlying token has actually expired or been revoked.
+  useEffect(() => {
+    let cancelled = false;
+
+    initGoogleAuth(GOOGLE_CLIENT_ID).then(async () => {
+      if (cancelled) return;
+      setGoogleReady(true);
+
+      const mode = localStorage.getItem(SESSION_KEY);
+
+      if (mode === "google") {
+        try {
+          const restored = await trySilentSignIn();
+          if (!restored) throw new Error("Silent sign-in unavailable");
+          const { sheetId, isNew } = await getOrCreateUserSheet(restored.token);
+          const products = isNew ? [] : await readProducts(restored.token, sheetId);
+          if (!cancelled) {
+            handleSignedIn({ mode: "google", token: restored.token, user: restored.user, sheetId, products }, { persist: false });
+          }
+        } catch {
+          localStorage.removeItem(SESSION_KEY);
+        }
+      } else if (mode === "team") {
+        const token = localStorage.getItem(TEAM_TOKEN_KEY);
+        const email = localStorage.getItem(TEAM_EMAIL_KEY);
+        if (token) {
+          try {
+            const products = await readProductsViaBridge(token);
+            if (!cancelled) {
+              handleSignedIn({ mode: "team", supabaseToken: token, user: { email }, products }, { persist: false });
+            }
+          } catch {
+            localStorage.removeItem(SESSION_KEY);
+            localStorage.removeItem(TEAM_TOKEN_KEY);
+            localStorage.removeItem(TEAM_EMAIL_KEY);
+          }
+        }
+      }
+
+      if (!cancelled) setCheckingSession(false);
+    });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Every mutation: update local state immediately (snappy UI), then push
   // the full list through to Google — directly if the owner, or via the
@@ -1038,6 +1101,18 @@ export default function App() {
     setProducts(updated);
     syncToSheet(updated);
   };
+
+  if (checkingSession) {
+    return (
+      <div style={{ fontFamily: "'Inter', sans-serif", background: COLORS.porcelain, height: "100vh" }} className="flex items-center justify-center">
+        <style>{FONT_IMPORT}</style>
+        <div className="flex items-center gap-2.5" style={{ color: COLORS.mist }}>
+          <RefreshCw size={16} className="animate-spin" />
+          <span className="text-sm">Restoring your session...</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!loggedIn) return <LoginScreen onSignedIn={handleSignedIn} googleReady={googleReady} />;
 
