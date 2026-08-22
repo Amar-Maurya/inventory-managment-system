@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — GroutLine</title>
+  <style>
+    body { font-family: -apple-system, Inter, Arial, sans-serif; max-width: 720px; margin: 60px auto; padding: 0 24px; line-height: 1.6; color: #22262A; }
+    h1 { font-size: 28px; margin-bottom: 4px; }
+    h2 { font-size: 18px; margin-top: 36px; }
+    .updated { color: #8A9499; font-size: 14px; margin-bottom: 32px; }
+    ul { padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: August 2026</p>
+
+  <p>GroutLine ("the app") is an inventory management tool. This policy explains what data the app accesses, why, and how it's handled.</p>
+
+  <h2>What we access</h2>
+  <p>When you sign in with Google, the app requests:</p>
+  <ul>
+    <li><strong>Your name, email, and profile photo</strong> — to identify you within the app and personalize the interface.</li>
+    <li><strong>Access to Google Sheets</strong> — to read and write the inventory data you manage through the app.</li>
+    <li><strong>Access to files the app creates in your Google Drive</strong> (via the <code>drive.file</code> scope) — this is intentionally limited: the app can only see files it creates itself, never your existing Drive contents.</li>
+  </ul>
+
+  <h2>How your data is used</h2>
+  <p>All inventory data (product names, quantities, prices, suppliers) is stored in a Google Sheet created in your own Google Drive, under your ownership and control. The app reads from and writes to this sheet to power the dashboard, filtering, and export features you use directly.</p>
+  <p>If you choose to share access with a teammate via email and password, that teammate's actions are relayed through our backend service, which is authorized only to read/write the specific sheet you've shared — never any other file in your Drive.</p>
+
+  <h2>What we don't do</h2>
+  <ul>
+    <li>We don't sell or share your data with third parties.</li>
+    <li>We don't access any Google Drive file other than the one this app creates for your inventory.</li>
+    <li>We don't use your data for advertising.</li>
+  </ul>
+
+  <h2>Data retention</h2>
+  <p>Your inventory data remains in your Google Sheet for as long as you keep it. A backup snapshot may be stored in our database (Supabase) purely as a safety net in case the sheet is lost — this backup is not used for any other purpose.</p>
+
+  <h2>Team access</h2>
+  <p>If you create login credentials for a teammate, their email and encrypted password are stored securely via Supabase Authentication, used solely to authenticate their access to the inventory you've shared with them.</p>
+
+  <h2>Revoking access</h2>
+  <p>You can revoke this app's access to your Google account at any time via <a href="https://myaccount.google.com/permissions" target="_blank" rel="noreferrer">Google Account → Security → Third-party access</a>.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about this policy can be sent to: <a href="mailto:amarmaurya544@gmail.com">amarmaurya544@gmail.com</a></p>
+</body>
+</html>
