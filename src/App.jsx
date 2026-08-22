@@ -345,7 +345,7 @@ function LoginScreen({ onSignedIn, googleReady }) {
 }
 
 // ---------- Add Product Modal ----------
-function ProductFormModal({ onClose, onSave, editProduct }) {
+function ProductFormModal({ onClose, onSave, editProduct, existingCategories = [] }) {
   const isEdit = Boolean(editProduct);
   const [form, setForm] = useState(
     editProduct
@@ -353,17 +353,17 @@ function ProductFormModal({ onClose, onSave, editProduct }) {
           name: editProduct.name, category: editProduct.category, qty: String(editProduct.qty),
           threshold: String(editProduct.threshold), price: String(editProduct.price), supplier: editProduct.supplier,
         }
-      : { name: "", category: "Tiles", qty: "", threshold: "", price: "", supplier: "" }
+      : { name: "", category: "", qty: "", threshold: "", price: "", supplier: "" }
   );
   const update = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.name || !form.qty || !form.price) return;
+    if (!form.name || !form.qty || !form.price || !form.category) return;
     onSave({
       id: isEdit ? editProduct.id : Date.now(),
       name: form.name,
-      category: form.category,
+      category: form.category.trim(),
       qty: Number(form.qty),
       threshold: Number(form.threshold) || 10,
       price: Number(form.price),
@@ -393,9 +393,18 @@ function ProductFormModal({ onClose, onSave, editProduct }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1.5">Category</label>
-              <select value={form.category} onChange={update("category")} style={{ borderColor: COLORS.line }} className="w-full rounded-lg border px-3.5 py-2.5 text-sm outline-none bg-white">
-                <option>Tiles</option><option>Adhesive</option>
-              </select>
+              <input
+                required
+                list="category-options"
+                value={form.category}
+                onChange={update("category")}
+                placeholder="Type or pick one"
+                style={{ borderColor: COLORS.line }}
+                className="w-full rounded-lg border px-3.5 py-2.5 text-sm outline-none"
+              />
+              <datalist id="category-options">
+                {existingCategories.map((c) => <option key={c} value={c} />)}
+              </datalist>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5">Supplier</label>
@@ -725,6 +734,11 @@ function DashboardTab({ products, onAdd, onDelete, onImport, goToProducts }) {
     return { totalValue, lowStock, suppliers, recent };
   }, [products]);
 
+  const existingCategories = useMemo(
+    () => Array.from(new Set(products.map((p) => p.category).filter(Boolean))).sort(),
+    [products]
+  );
+
   return (
     <div className="max-w-5xl mx-auto px-5 md:px-8 py-7 space-y-5">
       {/* Header */}
@@ -814,7 +828,7 @@ function DashboardTab({ products, onAdd, onDelete, onImport, goToProducts }) {
         <Plus size={15} /> Add product
       </button>
 
-      {showAdd && <ProductFormModal onClose={() => setShowAdd(false)} onSave={onAdd} />}
+      {showAdd && <ProductFormModal onClose={() => setShowAdd(false)} onSave={onAdd} existingCategories={existingCategories} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} onImport={onImport} />}
       {deleteTarget && <DeleteConfirm product={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={() => { onDelete(deleteTarget.id); setDeleteTarget(null); }} />}
     </div>
@@ -871,6 +885,11 @@ function ProductsTab({ products, onAdd, onEdit, onDelete, onDeleteMany, onImport
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showBulkDelete, setShowBulkDelete] = useState(false);
+
+  const existingCategories = useMemo(
+    () => Array.from(new Set(products.map((p) => p.category).filter(Boolean))).sort(),
+    [products]
+  );
 
   const filtered = useMemo(() => {
     let list = products.filter((p) => {
@@ -946,8 +965,9 @@ function ProductsTab({ products, onAdd, onEdit, onDelete, onDeleteMany, onImport
 
         <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ borderColor: COLORS.line }} className="rounded-lg border px-3 py-2 text-sm outline-none bg-white">
           <option value="All">All categories</option>
-          <option value="Tiles">Tiles</option>
-          <option value="Adhesive">Adhesive</option>
+          {existingCategories.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
         </select>
 
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ borderColor: COLORS.line }} className="rounded-lg border px-3 py-2 text-sm outline-none bg-white">
@@ -1071,8 +1091,8 @@ function ProductsTab({ products, onAdd, onEdit, onDelete, onDeleteMany, onImport
         </div>
       )}
 
-      {showAdd && <ProductFormModal onClose={() => setShowAdd(false)} onSave={onAdd} />}
-      {editTarget && <ProductFormModal editProduct={editTarget} onClose={() => setEditTarget(null)} onSave={onEdit} />}
+      {showAdd && <ProductFormModal onClose={() => setShowAdd(false)} onSave={onAdd} existingCategories={existingCategories} />}
+      {editTarget && <ProductFormModal editProduct={editTarget} onClose={() => setEditTarget(null)} onSave={onEdit} existingCategories={existingCategories} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} onImport={onImport} />}
       {deleteTarget && <DeleteConfirm product={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={() => { onDelete(deleteTarget.id); setDeleteTarget(null); }} />}
       {showBulkDelete && (
