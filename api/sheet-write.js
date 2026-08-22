@@ -19,12 +19,24 @@ export default async function handler(req, res) {
     ]);
 
     const sheets = getServiceAccountSheets();
-    await sheets.spreadsheets.values.update({
+
+    // Clear the full range first — same reasoning as the owner's direct
+    // write path: without this, deleting a row leaves stale data behind
+    // past the new (shorter) range, which reappears as a ghost product
+    // the next time the sheet is read.
+    await sheets.spreadsheets.values.clear({
       spreadsheetId: sheet_id,
-      range: `Inventory!A2:J${rows.length + 1}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: rows },
+      range: "Inventory!A2:J1000",
     });
+
+    if (rows.length > 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: sheet_id,
+        range: `Inventory!A2:J${rows.length + 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: rows },
+      });
+    }
 
     return res.status(200).json({ success: true });
   } catch (err) {
