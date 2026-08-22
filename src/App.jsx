@@ -822,7 +822,45 @@ function DashboardTab({ products, onAdd, onDelete, onImport, goToProducts }) {
 }
 
 // ---------- Products Tab ----------
-function ProductsTab({ products, onAdd, onEdit, onDelete, onImport }) {
+// ---------- Toast notifications ----------
+function ToastContainer({ toasts }) {
+  return (
+    <div className="fixed bottom-5 right-5 z-[100] flex flex-col gap-2 items-end pointer-events-none">
+      <style>{`@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          style={{ background: t.type === "error" ? COLORS.rust : COLORS.graphite, color: "#fff", animation: "toastIn 0.2s ease-out" }}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg shadow-lg text-sm max-w-xs"
+        >
+          {t.type === "error" ? <AlertCircle size={15} className="flex-shrink-0" /> : <Check size={15} color={COLORS.tealLight} className="flex-shrink-0" />}
+          <span>{t.message}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------- Bulk Delete Confirm ----------
+function BulkDeleteConfirm({ count, onCancel, onConfirm }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface }} className="w-full max-w-sm rounded-2xl p-6">
+        <div style={{ background: COLORS.rustFaint }} className="w-11 h-11 rounded-full flex items-center justify-center mb-4">
+          <Trash2 size={18} color={COLORS.rust} />
+        </div>
+        <h2 className="font-semibold text-lg mb-1.5">Delete {count} product{count === 1 ? "" : "s"}?</h2>
+        <p style={{ color: COLORS.mist }} className="text-sm mb-6">This removes them from your inventory. This can't be undone.</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel} style={{ borderColor: COLORS.line }} className="flex-1 border rounded-lg py-2.5 text-sm font-medium hover:bg-gray-50">Cancel</button>
+          <button onClick={onConfirm} style={{ background: COLORS.rust }} className="flex-1 text-white rounded-lg py-2.5 text-sm font-medium hover:opacity-90">Delete all</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductsTab({ products, onAdd, onEdit, onDelete, onDeleteMany, onImport }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [lowStockOnly, setLowStockOnly] = useState(false);
@@ -831,6 +869,8 @@ function ProductsTab({ products, onAdd, onEdit, onDelete, onImport }) {
   const [showImport, setShowImport] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
 
   const filtered = useMemo(() => {
     let list = products.filter((p) => {
@@ -848,6 +888,35 @@ function ProductsTab({ products, onAdd, onEdit, onDelete, onImport }) {
     });
     return list;
   }, [products, search, category, lowStockOnly, sortBy]);
+
+  // Clear selection whenever the visible list changes shape (filters,
+  // search) so people can't "select" rows they can no longer see.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [search, category, lowStockOnly, sortBy]);
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id));
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map((p) => p.id)));
+    }
+  };
+
+  const handleBulkDelete = () => {
+    onDeleteMany(Array.from(selectedIds));
+    setSelectedIds(new Set());
+    setShowBulkDelete(false);
+  };
 
   const filtersActive = search || category !== "All" || lowStockOnly;
 
@@ -902,6 +971,25 @@ function ProductsTab({ products, onAdd, onEdit, onDelete, onImport }) {
         </button>
       </div>
 
+      {/* Bulk action bar — only shows when something's selected */}
+      {selectedIds.size > 0 && (
+        <div style={{ background: COLORS.graphite }} className="rounded-xl px-4 py-3 flex items-center justify-between text-white">
+          <span className="text-sm font-medium">{selectedIds.size} selected</span>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSelectedIds(new Set())} style={{ color: "rgba(255,255,255,0.7)" }} className="text-sm hover:opacity-80">
+              Clear
+            </button>
+            <button
+              onClick={() => setShowBulkDelete(true)}
+              style={{ background: COLORS.rust }}
+              className="flex items-center gap-2 text-white rounded-lg px-3.5 py-1.5 text-sm font-medium hover:opacity-90"
+            >
+              <Trash2 size={14} /> Delete selected
+            </button>
+          </div>
+        </div>
+      )}
+
       {filtered.length === 0 ? (
         <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.line}` }} className="rounded-xl py-16 text-center">
           <Boxes size={28} style={{ color: COLORS.mist }} className="mx-auto mb-3" />
@@ -913,6 +1001,16 @@ function ProductsTab({ products, onAdd, onEdit, onDelete, onImport }) {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ color: COLORS.mist, borderBottom: `1px solid ${COLORS.line}` }} className="text-left">
+                  <th className="px-5 py-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleSelectAll}
+                      style={{ accentColor: COLORS.graphite }}
+                      className="w-4 h-4 rounded"
+                      aria-label="Select all"
+                    />
+                  </th>
                   <th className="font-medium px-5 py-3">Product</th>
                   <th className="font-medium px-5 py-3">Qty</th>
                   <th className="font-medium px-5 py-3">Price</th>
@@ -926,7 +1024,17 @@ function ProductsTab({ products, onAdd, onEdit, onDelete, onImport }) {
                 {filtered.map((p) => {
                   const low = p.qty < p.threshold;
                   return (
-                    <tr key={p.id} style={{ borderTop: `1px solid ${COLORS.line}` }}>
+                    <tr key={p.id} style={{ borderTop: `1px solid ${COLORS.line}`, background: selectedIds.has(p.id) ? COLORS.tealFaint : "transparent" }}>
+                      <td className="px-5 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(p.id)}
+                          onChange={() => toggleSelect(p.id)}
+                          style={{ accentColor: COLORS.graphite }}
+                          className="w-4 h-4 rounded"
+                          aria-label={`Select ${p.name}`}
+                        />
+                      </td>
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-3">
                           <ProductVisual category={p.category} size={34} />
@@ -967,6 +1075,9 @@ function ProductsTab({ products, onAdd, onEdit, onDelete, onImport }) {
       {editTarget && <ProductFormModal editProduct={editTarget} onClose={() => setEditTarget(null)} onSave={onEdit} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} onImport={onImport} />}
       {deleteTarget && <DeleteConfirm product={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={() => { onDelete(deleteTarget.id); setDeleteTarget(null); }} />}
+      {showBulkDelete && (
+        <BulkDeleteConfirm count={selectedIds.size} onCancel={() => setShowBulkDelete(false)} onConfirm={handleBulkDelete} />
+      )}
     </div>
   );
 }
@@ -985,6 +1096,13 @@ export default function App() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [session, setSession] = useState(null); // { token, user, sheetId }
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = (message, type = "success") => {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+  };
 
   // Persist to localStorage on sign-in, restore on page load, clear on logout.
   const handleSignedIn = (payload, { persist = true } = {}) => {
@@ -1096,6 +1214,7 @@ export default function App() {
     } catch (err) {
       console.error("Sheet sync failed:", err);
       setSyncStatus("error");
+      addToast("Couldn't save to the sheet — check your connection", "error");
     }
   };
 
@@ -1108,6 +1227,7 @@ export default function App() {
     const updated = [stamped, ...products];
     setProducts(updated);
     syncToSheet(updated);
+    addToast(`"${product.name}" added`);
   };
   const handleEdit = (edited) => {
     const updated = products.map((p) =>
@@ -1115,17 +1235,28 @@ export default function App() {
     );
     setProducts(updated);
     syncToSheet(updated);
+    addToast(`"${edited.name}" updated`);
   };
   const handleDelete = (id) => {
+    const target = products.find((p) => p.id === id);
     const updated = products.filter((p) => p.id !== id);
     setProducts(updated);
     syncToSheet(updated);
+    addToast(`"${target?.name || "Product"}" deleted`);
+  };
+  const handleDeleteMany = (ids) => {
+    const idSet = new Set(ids);
+    const updated = products.filter((p) => !idSet.has(p.id));
+    setProducts(updated);
+    syncToSheet(updated);
+    addToast(`${ids.length} product${ids.length === 1 ? "" : "s"} deleted`);
   };
   const handleImport = (newProducts) => {
     const stamped = newProducts.map((p) => ({ ...p, createdAt: now(), updatedAt: now() }));
     const updated = [...stamped, ...products];
     setProducts(updated);
     syncToSheet(updated);
+    addToast(`${newProducts.length} product${newProducts.length === 1 ? "" : "s"} imported`);
   };
 
   if (checkingSession) {
@@ -1159,8 +1290,9 @@ export default function App() {
       {activeTab === "dashboard" ? (
         <DashboardTab products={products} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} onImport={handleImport} goToProducts={() => setActiveTab("products")} />
       ) : (
-        <ProductsTab products={products} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} onImport={handleImport} />
+        <ProductsTab products={products} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} onDeleteMany={handleDeleteMany} onImport={handleImport} />
       )}
+      <ToastContainer toasts={toasts} />
     </div>
   );
 }
