@@ -374,8 +374,8 @@ function ProductFormModal({ onClose, onSave, editProduct }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-      <div style={{ background: COLORS.surface }} className="w-full max-w-md rounded-2xl p-6 md:p-7 relative max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface }} className="w-full max-w-md rounded-2xl p-6 md:p-7 relative max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-5 right-5 opacity-50 hover:opacity-100" aria-label="Close"><X size={18} /></button>
         <h2 style={{ fontFamily: "'Sora', sans-serif" }} className="text-xl font-semibold mb-1">{isEdit ? "Edit product" : "Add product"}</h2>
         <p style={{ color: COLORS.mist }} className="text-sm mb-6">{isEdit ? "Update details for this stock item." : "Enter details for the new stock item."}</p>
@@ -469,8 +469,8 @@ function EditableQty({ product, onSave }) {
 
 function DeleteConfirm({ product, onCancel, onConfirm }) {
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-      <div style={{ background: COLORS.surface }} className="w-full max-w-sm rounded-2xl p-6">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface }} className="w-full max-w-sm rounded-2xl p-6">
         <div style={{ background: COLORS.rustFaint }} className="w-11 h-11 rounded-full flex items-center justify-center mb-4">
           <Trash2 size={18} color={COLORS.rust} />
         </div>
@@ -510,8 +510,8 @@ function ImportModal({ onClose, onImport }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-      <div style={{ background: COLORS.surface }} className="w-full max-w-md rounded-2xl p-6 md:p-7 relative">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface }} className="w-full max-w-md rounded-2xl p-6 md:p-7 relative">
         <button onClick={onClose} className="absolute top-5 right-5 opacity-50 hover:opacity-100" aria-label="Close"><X size={18} /></button>
         <h2 style={{ fontFamily: "'Sora', sans-serif" }} className="text-xl font-semibold mb-1">Import from Excel</h2>
         <p style={{ color: COLORS.mist }} className="text-sm mb-5">Upload a .xlsx file matching the required columns.</p>
@@ -569,8 +569,8 @@ function ShareAccessModal({ onClose, ownerEmail, sheetId }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-      <div style={{ background: COLORS.surface }} className="w-full max-w-md rounded-2xl p-6 md:p-7 relative">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface }} className="w-full max-w-md rounded-2xl p-6 md:p-7 relative">
         <button onClick={onClose} className="absolute top-5 right-5 opacity-50 hover:opacity-100" aria-label="Close"><X size={18} /></button>
         <h2 style={{ fontFamily: "'Sora', sans-serif" }} className="text-xl font-semibold mb-1">Share access</h2>
         <p style={{ color: COLORS.mist }} className="text-sm mb-6">
@@ -578,9 +578,14 @@ function ShareAccessModal({ onClose, ownerEmail, sheetId }) {
         </p>
 
         {status === "success" ? (
-          <div style={{ background: COLORS.tealFaint }} className="rounded-lg p-4 text-sm">
-            <p style={{ color: COLORS.graphite }} className="font-medium mb-1">Access created</p>
-            <p style={{ color: COLORS.ink }}>Share these credentials with them directly — email: <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{email}</span></p>
+          <div>
+            <div style={{ background: COLORS.tealFaint }} className="rounded-lg p-4 text-sm mb-5">
+              <p style={{ color: COLORS.graphite }} className="font-medium mb-1">Access created</p>
+              <p style={{ color: COLORS.ink }}>Share these credentials with them directly — email: <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{email}</span></p>
+            </div>
+            <button onClick={onClose} style={{ background: COLORS.graphite }} className="w-full text-white rounded-lg py-2.5 text-sm font-medium hover:opacity-90">
+              Done
+            </button>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3.5">
@@ -1013,6 +1018,13 @@ export default function App() {
   // On mount: initialize Google Identity Services, then try to silently
   // restore whichever session type was last active — no re-login needed
   // unless the underlying token has actually expired or been revoked.
+  //
+  // Google's silent token request can, in some browser conditions, never
+  // call back at all rather than erroring out — so we race it against a
+  // timeout and treat "took too long" the same as "failed."
+  const withTimeout = (promise, ms) =>
+    Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1024,8 +1036,8 @@ export default function App() {
 
       if (mode === "google") {
         try {
-          const restored = await trySilentSignIn();
-          if (!restored) throw new Error("Silent sign-in unavailable");
+          const restored = await withTimeout(trySilentSignIn(), 5000);
+          if (!restored) throw new Error("Silent sign-in unavailable or timed out");
           const { sheetId, isNew } = await getOrCreateUserSheet(restored.token);
           const products = isNew ? [] : await readProducts(restored.token, sheetId);
           if (!cancelled) {
