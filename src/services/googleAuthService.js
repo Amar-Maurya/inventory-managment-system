@@ -12,11 +12,22 @@ let accessToken = null;
 let currentUser = null; // { email, name, picture }
 
 // Call once, after the Google script has loaded (see index.html changes below).
+// This always resolves within 6 seconds, even if the script fails to load —
+// callers must handle tokenClient still being unset in that case (signIn/
+// trySilentSignIn already do, by failing gracefully rather than hanging).
 export function initGoogleAuth(clientId, onTokenReady) {
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearInterval(checkLoaded);
+      clearTimeout(giveUp);
+      resolve();
+    };
+
     const checkLoaded = setInterval(() => {
       if (window.google?.accounts?.oauth2) {
-        clearInterval(checkLoaded);
         tokenClient = window.google.accounts.oauth2.initTokenClient({
           client_id: clientId,
           scope: SCOPES,
@@ -29,9 +40,11 @@ export function initGoogleAuth(clientId, onTokenReady) {
             onTokenReady?.(accessToken);
           },
         });
-        resolve();
+        finish();
       }
     }, 100);
+
+    const giveUp = setTimeout(finish, 6000);
   });
 }
 
