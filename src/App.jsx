@@ -1028,6 +1028,14 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
+    // Absolute last-resort failsafe: no matter what hangs anywhere in the
+    // chain above (script loading, silent auth, network), never leave the
+    // person staring at a spinner forever. Worst case, they just see the
+    // login screen a bit later than ideal instead of a stuck page.
+    const hardCeiling = setTimeout(() => {
+      if (!cancelled) setCheckingSession(false);
+    }, 9000);
+
     initGoogleAuth(GOOGLE_CLIENT_ID).then(async () => {
       if (cancelled) return;
       setGoogleReady(true);
@@ -1066,7 +1074,7 @@ export default function App() {
       if (!cancelled) setCheckingSession(false);
     });
 
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(hardCeiling); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
