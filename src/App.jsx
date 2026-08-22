@@ -569,7 +569,7 @@ function ShareAccessModal({ onClose, ownerEmail, sheetId }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" style={{ color: COLORS.ink }} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface }} className="w-full max-w-md rounded-2xl p-6 md:p-7 relative">
         <button onClick={onClose} className="absolute top-5 right-5 opacity-50 hover:opacity-100" aria-label="Close"><X size={18} /></button>
         <h2 style={{ fontFamily: "'Sora', sans-serif" }} className="text-xl font-semibold mb-1">Share access</h2>
