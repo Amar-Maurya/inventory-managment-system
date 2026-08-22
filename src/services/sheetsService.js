@@ -69,10 +69,21 @@ export async function readProducts(token, sheetId) {
 // reliable for a single-admin tool — avoids row-diffing complexity.
 // For larger datasets this would move to targeted row updates instead.
 export async function writeAllProducts(token, sheetId, products) {
+  // Clear the full range first — otherwise, if the list has gotten
+  // shorter (a delete), old rows past the new end would be left behind
+  // and reappear as ghost products the next time the sheet is read.
+  await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Inventory!A2:J1000:clear`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({}),
+  });
+
   const rows = products.map((p) => [
     String(p.id), p.name, p.category, p.qty, p.price, p.supplier, p.threshold, p.dateAdded,
     p.createdAt || "", p.updatedAt || "",
   ]);
+  if (rows.length === 0) return { success: true }; // nothing left to write, clear was enough
+
   const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Inventory!A2:J${rows.length + 1}?valueInputOption=USER_ENTERED`,
     {
