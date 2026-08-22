@@ -469,7 +469,7 @@ function EditableQty({ product, onSave }) {
 
 function DeleteConfirm({ product, onCancel, onConfirm }) {
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface }} className="w-full max-w-sm rounded-2xl p-6">
         <div style={{ background: COLORS.rustFaint }} className="w-11 h-11 rounded-full flex items-center justify-center mb-4">
           <Trash2 size={18} color={COLORS.rust} />
